@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -7,9 +6,297 @@
     <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
   </head>
   <body class="mixpanel-platform-body">
-    <h1>Hello, World!</h1>
+  	<style>
+  		a {
+  			text-decoration: none;
+  		}
+  		.header {
+  			font-size: 20px;
+  			color: gray;
+  			font-weight: bold;
+  			margin-bottom: 15px;
+  		}
+  		.mixpanel-platform-select.event_selector_theme {
+  			max-width: 50px;
+  		}
+  		.mixpanel-platform-select.event_selector_theme .select_button.small, .mixpanel-platform-input-select {
+  			max-width: 50px;
+  			min-width: 0;
+  		}
+  		.mixpanel-platform-select.event_selector_theme .select_button.active+.select_menu.small {
+  			max-width: 96px;
+  			min-width: 0;
+  		}
+  		.dropdown-label {
+  			vertical-align: middle;
+  			position: relative;
+  			display: inline-block;
+  		}
+  		.select {
+  			display: inline-block;
+  			width: 430px;
+  		}
+  		.select.left {
+  			left: 0px;
+  			position: relative;
+  			margin: 10px 0;
+  		}
+  		.select.right {
+  			margin-left: 187px;
+  			margin: 10px 0;
+  			display: inline-block;
+  			position: relative;
+  			width: 300px;
+  		}
+  		#dateSelect {
+  			display: inline-block;
+  			right: 15px;
+  			vertical-align: middle;
+  		}
+  		#unitSelect {
+  			margin-left: -50px;
+  		}
+  	</style>
+  	<script id='query'>
+		function main() {
+		    return Events({from_date: params.from_date, to_date: params.to_date})
+		    .groupByUser(function(state, events) {
+		        state = state || {
+		            event_sequence: [],
+		            time_sequence: []
+		        };
+		        for (var i = 0; i < events.length; i++) {
+		            if (events[i].name == params.end_event && !state.done) {
+		                state.event_sequence.push(events[i].name);
+		                state.time_sequence.push(events[i].time);
+		                state.done = true;
+		            }
+		            else if (!state.done) {
+		                state.event_sequence.push(events[i].name);
+		                state.time_sequence.push(events[i].time);
+		            }
+		            if (params.property) {
+		                state.propval = events[i].properties[params.property];
+		            }
+		        }
+		        return state;
+		    })
+		    .filter(function(item) {
+		        if (params.end_event) {
+		            return item.value.done;
+		        }
+		        else
+		            return item;
+		    })
+		    .map(function(item) {
+		        var end_time = item.value.time_sequence[item.value.time_sequence.length - 1];
+		        var updated_sequence = [];
+		        for (var i = 0; i < item.value.time_sequence.length; i++) {
+		            if (end_time - item.value.time_sequence[i] < params.conversion_length) {
+		                updated_sequence.push(item.value.event_sequence[i]);
+		            }
+		        }
+		        var obj = {};
+		        obj.sequence = updated_sequence;
+		        if (item.value.propval) {
+		            obj.group = item.value.propval;
+		        }
+		        else {
+		            obj.group = 'No Property';
+		        }
+		        return obj;
+		    })
+		    .filter(function(item) {return item.sequence.length >= params.event_count;})
+		    .groupBy([function(item) {return item.sequence;}, function(item) {return item.group;}], mixpanel.reducer.count())
+		    .groupBy([function(item) {return item.key[item.key.length - 1];}], mixpanel.reducer.top(params.num_results))
+		    .map(function(item) {
+		        var val = [];
+		        var seq = [];
+		        for (var i = 0; i < item.value.length; i++) {
+		            for (var j = 0; j < item.value[i].key.length - 1; j++) {
+		                seq.push(item.value[i].key[j]);
+		            }
+		            val.push({
+		                count: item.value[i].value,
+		                sequence: seq
+		            });
+		            seq = [];
+		        }
+		        return {key: item.key,
+		                value: val};
+		    });
+		}
+    </script>
+  	<div class="mixpanel-platform-section">
+  	  <div class="header" style="display:flex;justify-content:center;align-items:center;width:100%;">Most Common User Flows</div>
+  	  <div class="dropdown-section">
+  	  	<div class="select left">
+      		<div class="dropdown-label" id="sessionlength">Session length:</div>
+      		<div id="timeSelect"></div>
+      		<div id="unitSelect"></div>
+      	</div>
+      	<div class="select right">
+      		<div class="dropdown-label">Date range:</div>
+      		<div id="dateSelect"></div>
+      	</div>
+      </div>
+      <div class="dropdown-section">
+      	<div class="select left">
+      		<div class="dropdown-label">Minimum sequence length:</div>
+      		<div id="minLengthSelect"></div>
+      	</div>
+      	<div class="select right">
+      		<div class="dropdown-label">Number of results to show:</div>
+      		<div id="numResultsSelect"></div>
+      	</div>
+      </div>
+      <div class="dropdown-section">
+      	<div class="select left">
+      		<div class="dropdown-label">End Event:</div>
+      		<div id="eventSelect"></div>
+      	</div>
+      	<div class="select right">
+      		<div class="dropdown-label">Property:</div>
+      		<div id="propSelect"></div>
+      	</div>
+      </div>
+    </div>
+    <div id="table"></div>
     <script>
-      // Run queries and display results here
+		var script = document.getElementById('query').innerHTML;
+		var eventTable = $('#table').MPTable({
+		 showPercentages: false,
+		 firstColHeader: 'Rank'
+		});
+		var dateSelect = $('#dateSelect').MPDatepicker();
+		var items = [];
+		for (var i = 0; i < 30; i++) {
+			items.push({label: (i+1).toString(), value: (i+1)});
+		}
+		var time_length = $('#timeSelect').MPSelect({items: items});
+		var time_unit = $('#unitSelect').MPSelect({
+		 items: [{
+		     label: 'hours',
+		     value: 3600000
+		 }, {
+		     label: 'days',
+		     value: 86400000
+		 }, {
+		     label: 'weeks',
+		     value: 604800000
+		 }, {
+		     label: 'months',
+		     value: 2592000000
+		 }]
+		});
+		time_unit.val(86400000);
+		var min_sequence_length = $('#minLengthSelect').MPSelect({
+		 items: [{
+		     label: '1',
+		     value: 1
+		 }, {
+		     label: '2',
+		     value: 2
+		 }, {
+		     label: '3',
+		     value: 3
+		 }, {
+		     label: '4',
+		     value: 4
+		 }, {
+		     label: '5',
+		     value: 5
+		 }]
+		});
+		min_sequence_length.val(2);
+		var max_results = $('#numResultsSelect').MPSelect({
+		 items: [{
+		     label: '5',
+		     value: 5
+		 }, {
+		     label: '10',
+		     value: 10
+		 }, {
+		     label: '20',
+		     value: 20
+		 }, {
+		     label: '50',
+		     value: 50
+		 }, {
+		     label: '100',
+		     value: 100
+		 }]
+		});
+		max_results.val(10);
+		var finish_event = $('#eventSelect').MPEventSelect();
+		var property = $('#propSelect').MPPropertySelect();
+		property.MPPropertySelect('setEvent');
+
+		function runQuery() {
+			var from_date = dateSelect.MPDatepicker('value').from.toISOString().slice(0, -14);
+			var to_date = dateSelect.MPDatepicker('value').to.toISOString().slice(0, -14);
+			var event_count = min_sequence_length.MPSelect('value');
+			var conversion_length = time_length.MPSelect('value') * time_unit.MPSelect('value');
+			var num_results = max_results.MPSelect('value');
+			var end_event = finish_event.MPEventSelect('value');
+			var prop = property.MPPropertySelect('value');
+			$('.select_button:not(#eventSelect > .select_button, #propSelect > .select_button)').addClass('small');
+			$('.select_menu:not(#eventSelect > .select_menu, #propSelect > .select_menu)').addClass('small');
+			$('#numResultsSelect, #minLengthSelect, #timeSelect, #unitSelect').css({'display': 'inline-block', 'max-width': '50px'})
+			var params = {
+			    'from_date': from_date,
+			    'to_date': to_date,
+			    'event_count': event_count,
+			    'conversion_length': conversion_length,
+			    'num_results': num_results,
+			    'end_event': end_event,
+			    'property': prop
+			};
+			MP.api.custom_query(script, params).done(function(results) {
+			 	console.log(results);
+			    var res = ['this is a placeholder to delete because MPTable displays the indexes for some reason'];
+			    if (results.length > 0) {
+			        for (var i = 0; i < num_results; i++) {
+			        	var obj = {};
+			            for (var j = 0; j < results.length; j++) {
+			             	if (results[j].value[i]) {
+			             		obj[results[j].key[0]] = results[j].value[i].count + ': ' + results[j].value[i].sequence.toString();
+			             	}
+			             	else {
+			             		obj[results[j].key[0]] = 'no more flows';
+			             	}
+			            }
+			            res.push(obj);
+			            obj = {};
+			        }
+			    }
+			    delete res[0];
+			    eventTable.MPTable('setData', res);
+			});
+		}
+		runQuery();
+		dateSelect.on('change', function() {
+		 runQuery();
+		});
+		time_length.on('change', function(e, selection) {
+		 runQuery();
+		});
+		time_unit.on('change', function(e, selection) {
+		 runQuery();
+		});
+		min_sequence_length.on('change', function(e, selection) {
+		 runQuery();
+		});
+		max_results.on('change', function(e, selection) {
+		 runQuery();
+		});
+		finish_event.on('change', function(e, selection) {
+		 property.MPPropertySelect('setEvent', finish_event.MPEventSelect('value'));
+		 runQuery();
+		});
+		property.on('change', function(e, selection) {
+		 runQuery();
+		});
     </script>
   </body>
 </html>
